@@ -1,0 +1,5 @@
+deny.system=CRITICAL
+deny.exec=CRITICAL
+deny.fork=CRITICAL
+deny.gets=HIGH
+memory.max_allocation=10000000
