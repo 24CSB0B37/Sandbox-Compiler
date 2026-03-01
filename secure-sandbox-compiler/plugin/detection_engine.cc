@@ -1,6 +1,9 @@
 #include "gcc-plugin.h"
-#include "gimple.h"
+#include "gcc-plugin.h"
+#include "plugin-version.h"
 #include "tree.h"
+#include "gimple.h"
+#include "gimple-iterator.h"
 #include <string.h>
 
 #include "policy_engine.h"

@@ -1,0 +1,3 @@
+*.so
+*.o
+sandbox_log.json
