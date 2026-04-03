@@ -1,6 +1,5 @@
 #include "gcc-plugin.h"
 #include "plugin-version.h"
-
 #include "context.h"
 #include "tree.h"
 #include "basic-block.h"
@@ -16,10 +15,10 @@
 static unsigned int sandbox_execute(function *fun)
 {
     initialize_policy_engine();
+    load_policy("policies/strict.policy");
     logger_init();
 
     basic_block bb;
-
     FOR_EACH_BB_FN(bb, fun)
     {
         for (gimple_stmt_iterator gsi = gsi_start_bb(bb);
@@ -32,8 +31,19 @@ static unsigned int sandbox_execute(function *fun)
     }
 
     evaluate_policies();
-    enforce_policies();
 
+    // if fixable violations exist recompile the fixed file
+    if (get_violation_count() > 0 && get_fix_applied())
+    {
+        printf("[Sandbox] Recompiling fixed file...\n");
+        int ret = system("gcc test_inputs/*_fixed.c " "runtime/sandbox_wrappers.o -o out_fixed 2>&1");
+        if (ret == 0)
+            printf("[Sandbox] Fixed binary ready: ./out_fixed\n");
+        else
+            printf("[Sandbox] Fixed binary recompile failed.\n");
+    }
+
+    enforce_policies();
     logger_close();
     return 0;
 }
@@ -46,17 +56,16 @@ const pass_data sandbox_pass_data = {
     OPTGROUP_NONE,
     TV_NONE,
     PROP_gimple_any,
-    0,
-    0,
-    0,
-    0
+    0, 0, 0, 0
 };
 
-struct sandbox_pass : gimple_opt_pass {
+struct sandbox_pass : gimple_opt_pass
+{
     sandbox_pass(gcc::context *ctxt)
         : gimple_opt_pass(sandbox_pass_data, ctxt) {}
 
-    unsigned int execute(function *fun) override {
+    unsigned int execute(function *fun) override
+    {
         return sandbox_execute(fun);
     }
 };

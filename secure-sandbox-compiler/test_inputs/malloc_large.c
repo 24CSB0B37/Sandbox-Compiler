@@ -1,4 +1,6 @@
 #include <stdlib.h>
+#include <stdio.h>
 int main() {
-    malloc(20000000);
+    void *p = malloc(20000000);
+    return 0;
 }

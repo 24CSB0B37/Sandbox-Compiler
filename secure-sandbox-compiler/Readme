@@ -1,0 +1,312 @@
+Readme · MD
+Copy
+
+# Secure Sandbox Compiler
+ 
+A GCC plugin that enforces configurable security policies at **compile time** by analyzing code using GIMPLE IR, detecting violations, auto-fixing dangerous patterns, and blocking unsafe binaries from being generated.
+ 
+---
+ 
+## Project Structure
+ 
+```
+secure-sandbox-compiler/
+├── plugin/
+│   ├── detection_engine.cc     # Detects violations in GIMPLE IR
+│   ├── detection_engine.h
+│   ├── policy_engine.cc        # Loads policy, records violations, applies fixes
+│   ├── policy_engine.h
+│   ├── enforcement.cc          # Blocks or warns based on severity
+│   ├── enforcement.h
+│   ├── logger.cc               # Writes sandbox_log.json with timestamp/file/line
+│   ├── logger.h
+│   ├── sandbox_pass.cc         # GCC GIMPLE pass — orchestrates everything
+│   └── sandbox_plugin.cc       # Plugin entry point registered with GCC
+├── policies/
+│   └── strict.policy           # All rules — fully configurable
+├── runtime/
+│   └── sandbox_wrappers.c      # Safe replacements for blocked functions
+├── test_inputs/
+│   ├── system_violation.c      # Tests system() detection
+│   ├── malloc_large.c          # Tests large allocation detection
+│   ├── pointer_arith.c         # Tests pointer arithmetic detection
+│   └── safe.c                  # Clean file — no violations
+├── Makefile
+└── .gitignore
+```
+ 
+---
+ 
+## What is Implemented
+ 
+### Compile-Time Detection (detection_engine.cc)
+Analyzes every GIMPLE statement during compilation and detects:
+ 
+| Pattern | Rule | Default Severity |
+|---------|------|-----------------|
+| `system()` | SYSTEM_CALL | HIGH |
+| `exec*()` family | EXEC_USAGE | CRITICAL |
+| `fork()` | FORK_USAGE | HIGH |
+| `gets()` | BUFFER_OVERFLOW_PATTERN | HIGH |
+| `strcpy()` | BUFFER_OVERFLOW_PATTERN | HIGH |
+| `socket()` | NETWORK_SOCKET | HIGH |
+| `malloc()` > 10MB | LARGE_ALLOCATION | MEDIUM |
+| `fopen()` | FILE_OPEN | LOW |
+| `fwrite()`/`fputs()` | FILE_WRITE | MEDIUM |
+| Pointer arithmetic | POINTER_ARITHMETIC | LOW |
+ 
+Every violation reports the **exact file and line number** using GCC's `gimple_location()`.
+ 
+---
+ 
+### Policy Engine (policy_engine.cc + strict.policy)
+All rules are loaded from `policies/strict.policy` at runtime — no recompilation needed to change behavior.
+ 
+Each rule supports these fields:
+ 
+```
+RULE: SYSTEM_CALL
+SEVERITY: HIGH              # LOW / MEDIUM / HIGH / CRITICAL
+TYPE: SECURITY
+ISSUE: Use of system()
+REASON: Allows execution of arbitrary shell commands
+SUGGESTION: Replace with execve() or safer APIs
+ENFORCEMENT: BLOCK          # BLOCK / WARN / LOG
+FIXABLE: TRUE               # TRUE / FALSE
+FIX: Replace system() with execve() with validated arguments
+PRIORITY: 1
+ENABLED: TRUE               # TRUE / FALSE
+```
+ 
+**All fields are configurable without touching source code.**
+ 
+---
+ 
+### Auto-Fix Engine (apply_fix in policy_engine.cc)
+When `FIXABLE: TRUE` is set, the engine:
+1. Reads the original source file
+2. Patches the dangerous line
+3. Writes a `_fixed.c` file
+4. Automatically recompiles the fixed file into `out_fixed`
+ 
+| Violation | Auto-Fix Applied |
+|-----------|-----------------|
+| `system("cmd")` | Replaced with `execvp("/bin/sh", "-c", cmd)` + `#include <unistd.h>` added |
+| `gets(buf)` | Replaced with `fgets(buf, sizeof(buf), stdin)` |
+| `strcpy(dst, src)` | Replaced with `strncpy(dst, src, sizeof(dst)-1)` |
+| `malloc(N)` where N > 10MB | Wrapped with size guard — returns NULL if too large |
+| `fopen(path, mode)` | Path sanitized — blocks `../`, `/etc/`, `/root/`, `/proc/` |
+ 
+---
+ 
+### Enforcement Engine (enforcement.cc)
+After all violations are recorded, enforcement runs based on the highest enforcement level seen:
+ 
+| Enforcement | Result |
+|-------------|--------|
+| `BLOCK` | `out` binary deleted, `exit(1)` called, only `out_fixed` available |
+| `WARN` | Warning printed, both `out` and `out_fixed` generated |
+| `LOG` | Silently logged to `sandbox_log.json` only |
+ 
+---
+ 
+### JSON Logger (logger.cc)
+Every violation is written to `sandbox_log.json` with:
+- Timestamp
+- Severity
+- Rule type
+- Message
+- File name
+- Line number
+ 
+Example output:
+```json
+[
+  {
+    "timestamp": "2026-04-03 10:30:00",
+    "severity": "HIGH",
+    "type": "SYSTEM_CALL",
+    "message": "Use of system()",
+    "file": "test_inputs/system_violation.c",
+    "line": 3
+  }
+]
+```
+ 
+---
+ 
+### Runtime Wrappers (sandbox_wrappers.c)
+Safe replacements linked into the fixed binary:
+ 
+- `sandbox_system_wrapper()` — blocks system(), returns -1
+- `sandbox_exec_wrapper()` — blocks exec(), returns -1
+- `sandbox_fork_wrapper()` — blocks fork(), returns -1
+- `sandbox_sanitize_path(path)` — blocks `../`, `/etc/`, `/root/`, `/proc/`, `/sys/`, `/boot/`, `/dev/`
+ 
+---
+ 
+## How to Build
+ 
+### Prerequisites
+```bash
+sudo apt install gcc-$(gcc -dumpversion)-plugin-dev
+```
+ 
+### Build Everything
+```bash
+make clean
+make
+```
+ 
+This builds:
+- `sandbox_plugin.so` — the GCC plugin
+- `runtime/sandbox_wrappers.o` — runtime safe wrappers
+ 
+---
+ 
+## How to Run
+ 
+### Run on test files
+```bash
+make test_system    # tests system() violation
+make test_malloc    # tests large malloc violation
+make test_pointer   # tests pointer arithmetic
+make test_safe      # tests clean file — no violations
+```
+ 
+### Run manually on any file
+```bash
+gcc -fplugin=./sandbox_plugin.so yourfile.c runtime/sandbox_wrappers.o -o out
+```
+ 
+### Run the safe fixed binary
+```bash
+./out_fixed
+```
+ 
+---
+ 
+## How to Configure
+ 
+### Change severity of a rule
+Open `policies/strict.policy` and edit the SEVERITY field:
+```
+RULE: LARGE_ALLOCATION
+SEVERITY: CRITICAL    # changed from MEDIUM to CRITICAL
+```
+Now large mallocs abort compilation instead of just warning.
+ 
+### Disable a rule completely
+```
+RULE: POINTER_ARITHMETIC
+ENABLED: FALSE
+```
+The rule is skipped entirely — no log, no warning, no fix.
+ 
+### Change enforcement mode
+```
+RULE: SYSTEM_CALL
+ENFORCEMENT: WARN     # changed from BLOCK to WARN
+```
+Now system() triggers a warning but does not block compilation.
+ 
+### Enable or disable auto-fix
+```
+RULE: BUFFER_OVERFLOW_PATTERN
+FIXABLE: TRUE     # generates _fixed.c with fgets/strncpy replacements
+FIXABLE: FALSE    # just warns, no fix generated
+```
+ 
+### Change the fix description shown to user
+```
+RULE: SYSTEM_CALL
+FIX: Your custom fix instructions here
+```
+ 
+---
+ 
+## Demonstrating Configurability
+ 
+### Scenario 1 — Block and auto-fix (default)
+```
+ENFORCEMENT: BLOCK
+FIXABLE: TRUE
+```
+```bash
+make test_system
+./out          # No such file or directory — blocked
+./out_fixed    # runs safely with execvp
+```
+ 
+### Scenario 2 — Warn only, fix still generated
+```
+ENFORCEMENT: WARN
+FIXABLE: TRUE
+```
+```bash
+make test_system
+./out          # unsafe — still runs system()
+./out_fixed    # safe — uses execvp
+```
+ 
+### Scenario 3 — Block, no fix
+```
+ENFORCEMENT: BLOCK
+FIXABLE: FALSE
+```
+```bash
+make test_system
+# out deleted, no out_fixed — must fix manually
+```
+ 
+### Scenario 4 — Disable rule entirely
+```
+ENABLED: FALSE
+```
+```bash
+make test_system
+# no violation reported, out generated normally
+```
+ 
+---
+ 
+## Enforcement + Fixable Combinations
+ 
+| FIXABLE | ENFORCEMENT | out | out_fixed |
+|---------|-------------|-----|-----------|
+| TRUE | BLOCK | deleted | generated |
+| TRUE | WARN | generated | generated |
+| FALSE | BLOCK | deleted | not generated |
+| FALSE | WARN | generated | not generated |
+ 
+---
+ 
+## Where to Extend
+ 
+| What to add | Where to change |
+|-------------|----------------|
+| New dangerous function | `plugin/detection_engine.cc` — add new `record_violation()` call |
+| New auto-fix pattern | `plugin/policy_engine.cc` — add new block in `apply_fix()` |
+| New rule | `policies/strict.policy` — add new RULE block |
+| New blocked path | `runtime/sandbox_wrappers.c` — add to `blocked[]` array |
+| New enforcement action | `plugin/enforcement.cc` — add new `strcmp` branch |
+| Change allocation threshold | `plugin/detection_engine.cc` — change `10000000` |
+| Increase max rules | `plugin/policy_engine.cc` — change `#define MAX_RULES 32` |
+ 
+---
+ 
+## Files NOT to Commit
+ 
+```
+sandbox_plugin.so
+out
+out_fixed
+sandbox_log.json
+analysis_report.txt
+build_log.txt
+test_inputs/*_fixed.c
+runtime/sandbox_wrappers.o
+a.out
+```
+ 
+All generated automatically — keep only source files in version control.

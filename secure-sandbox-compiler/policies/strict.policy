@@ -1,5 +1,241 @@
-deny.system=CRITICAL
-deny.exec=CRITICAL
-deny.fork=CRITICAL
-deny.gets=HIGH
-memory.max_allocation=10000000
+RULE: SYSTEM_CALL
+SEVERITY: HIGH
+TYPE: SECURITY
+CATEGORY: COMMAND_EXECUTION
+ISSUE: Use of system()
+REASON: Allows execution of arbitrary shell commands
+SUGGESTION: Replace with execve() or safer APIs
+ENFORCEMENT: BLOCK
+FIXABLE: TRUE
+FIX: Replace system() with execve() with validated arguments
+PRIORITY: 1
+ENABLED: TRUE
+
+---
+
+RULE: EXEC_USAGE
+SEVERITY: HIGH
+TYPE: SECURITY
+CATEGORY: PROCESS_EXECUTION
+ISSUE: Use of exec family functions
+REASON: Can execute external binaries without control
+SUGGESTION: Restrict execution paths or validate inputs
+ENFORCEMENT: BLOCK
+FIXABLE: TRUE
+FIX: Wrap exec calls with path validation before execution
+PRIORITY: 1
+ENABLED: TRUE
+
+---
+
+RULE: FORK_USAGE
+SEVERITY: HIGH
+TYPE: PROCESS
+CATEGORY: PROCESS_CREATION
+ISSUE: Use of fork()
+REASON: Creates uncontrolled parallel processes
+SUGGESTION: Use controlled threading or process pools
+ENFORCEMENT: BLOCK
+FIXABLE: FALSE
+FIX: No automatic fix available - redesign to use thread pools
+PRIORITY: 2
+ENABLED: TRUE
+
+---
+
+RULE: LARGE_ALLOCATION
+SEVERITY: MEDIUM
+TYPE: MEMORY
+CATEGORY: RESOURCE_USAGE
+ISSUE: Large memory allocation
+REASON: May lead to memory exhaustion
+SUGGESTION: Validate allocation size before use
+ENFORCEMENT: WARN
+FIXABLE: TRUE
+FIX: Wrap malloc with size validation guard
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: BUFFER_OVERFLOW_PATTERN
+SEVERITY: HIGH
+TYPE: SECURITY
+CATEGORY: MEMORY_SAFETY
+ISSUE: Possible buffer overflow
+REASON: Writing beyond allocated memory
+SUGGESTION: Use bounds-safe functions
+ENFORCEMENT: BLOCK
+FIXABLE: TRUE
+FIX: Replace gets() with fgets(), replace strcpy() with strncpy()
+PRIORITY: 1
+ENABLED: TRUE
+
+---
+
+RULE: NETWORK_SOCKET
+SEVERITY: HIGH
+TYPE: NETWORK
+CATEGORY: EXTERNAL_COMMUNICATION
+ISSUE: Network socket usage
+REASON: Allows external communication
+SUGGESTION: Restrict or sandbox network access
+ENFORCEMENT: BLOCK
+FIXABLE: FALSE
+FIX: No automatic fix - manually restrict socket usage
+PRIORITY: 1
+ENABLED: TRUE
+
+---
+
+RULE: POINTER_ARITHMETIC
+SEVERITY: LOW
+TYPE: MEMORY
+CATEGORY: POINTER_USAGE
+ISSUE: Pointer arithmetic detected
+REASON: May lead to unsafe memory access
+SUGGESTION: Ensure bounds checking
+ENFORCEMENT: LOG
+FIXABLE: FALSE
+FIX: No automatic fix - manually add bounds checks
+PRIORITY: 5
+ENABLED: TRUE
+
+---
+
+RULE: FILE_OPEN
+SEVERITY: LOW
+TYPE: IO
+CATEGORY: FILE_HANDLING
+ISSUE: File opened without validation
+REASON: May lead to unauthorized access
+SUGGESTION: Validate file paths and permissions
+ENFORCEMENT: LOG
+FIXABLE: TRUE
+FIX: Sanitize path - block access to parent directories and sensitive paths
+PRIORITY: 4
+ENABLED: TRUE
+
+---
+
+RULE: FILE_WRITE
+SEVERITY: MEDIUM
+TYPE: IO
+CATEGORY: FILE_MODIFICATION
+ISSUE: File write operation detected
+REASON: May modify sensitive files
+SUGGESTION: Restrict write locations
+ENFORCEMENT: WARN
+FIXABLE: TRUE
+FIX: Restrict writes to allowed directories only
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: INLINE_ASSEMBLY
+SEVERITY: HIGH
+TYPE: SECURITY
+CATEGORY: LOW_LEVEL_ACCESS
+ISSUE: Inline assembly usage
+REASON: Bypasses compiler-level checks
+SUGGESTION: Avoid or strictly validate usage
+ENFORCEMENT: BLOCK
+FIXABLE: FALSE
+FIX: No automatic fix - remove inline assembly manually
+PRIORITY: 1
+ENABLED: TRUE
+
+---
+
+RULE: HARDCODED_PATH
+SEVERITY: LOW
+TYPE: SECURITY
+CATEGORY: CONFIGURATION
+ISSUE: Hardcoded file path
+REASON: Reduces portability and security
+SUGGESTION: Use configurable paths
+ENFORCEMENT: LOG
+FIXABLE: TRUE
+FIX: Replace hardcoded path with environment variable or config lookup
+PRIORITY: 4
+ENABLED: TRUE
+
+---
+
+RULE: THREAD_CREATION
+SEVERITY: MEDIUM
+TYPE: PROCESS
+CATEGORY: MULTITHREADING
+ISSUE: Excessive thread creation
+REASON: Can exhaust system resources
+SUGGESTION: Limit thread count and reuse threads
+ENFORCEMENT: WARN
+FIXABLE: FALSE
+FIX: No automatic fix - use thread pool pattern manually
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: MEMORY_LEAK_PATTERN
+SEVERITY: MEDIUM
+TYPE: MEMORY
+CATEGORY: MEMORY_MANAGEMENT
+ISSUE: Potential memory leak detected
+REASON: Allocated memory not freed
+SUGGESTION: Ensure proper deallocation
+ENFORCEMENT: WARN
+FIXABLE: FALSE
+FIX: No automatic fix - manually add free() calls
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: RECURSION_DEPTH
+SEVERITY: MEDIUM
+TYPE: LOGIC
+CATEGORY: STACK_USAGE
+ISSUE: Deep recursion detected
+REASON: May cause stack overflow
+SUGGESTION: Convert to iterative logic
+ENFORCEMENT: WARN
+FIXABLE: FALSE
+FIX: No automatic fix - convert to iterative manually
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: UNSAFE_CAST
+SEVERITY: MEDIUM
+TYPE: TYPE_SAFETY
+CATEGORY: CASTING
+ISSUE: Unsafe type casting
+REASON: May cause undefined behavior
+SUGGESTION: Use safe casting practices
+ENFORCEMENT: WARN
+FIXABLE: FALSE
+FIX: No automatic fix - review cast manually
+PRIORITY: 3
+ENABLED: TRUE
+
+---
+
+RULE: GLOBAL_VARIABLE_USAGE
+SEVERITY: LOW
+TYPE: DESIGN
+CATEGORY: CODE_QUALITY
+ISSUE: Use of global variables
+REASON: Reduces modularity and safety
+SUGGESTION: Use local or encapsulated variables
+ENFORCEMENT: LOG
+FIXABLE: FALSE
+FIX: No automatic fix - refactor manually
+PRIORITY: 5
+ENABLED: TRUE
+
+---
+
+END
