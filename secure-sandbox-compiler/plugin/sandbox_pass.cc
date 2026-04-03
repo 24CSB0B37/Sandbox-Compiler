@@ -18,6 +18,8 @@ static unsigned int sandbox_execute(function *fun)
     load_policy("policies/strict.policy");
     logger_init();
 
+    const char *func_name = DECL_NAME(fun->decl) ? IDENTIFIER_POINTER(DECL_NAME(fun->decl)) : "unknown";
+
     basic_block bb;
     FOR_EACH_BB_FN(bb, fun)
     {
@@ -26,7 +28,7 @@ static unsigned int sandbox_execute(function *fun)
              gsi_next(&gsi))
         {
             gimple *stmt = gsi_stmt(gsi);
-            analyze_statement(stmt, &gsi);
+            analyze_statement(stmt, &gsi, func_name);
         }
     }
 

@@ -23,6 +23,8 @@ static int  violation_count     = 0;
 static int  fix_applied         = 0;
 static char highest[16]         = "LOW";
 static char highest_enforcement[16] = "LOG";
+static int  policy_loaded       = 0;
+static int  policies_evaluated  = 0;
 
 void initialize_policy_engine()
 {
@@ -34,6 +36,8 @@ void initialize_policy_engine()
 
 void load_policy(const char *path)
 {
+    if (policy_loaded) return;
+
     FILE *f = fopen(path, "r");
     if (!f)
     {
@@ -81,6 +85,7 @@ void load_policy(const char *path)
     }
 
     fclose(f);
+    policy_loaded = 1;
     printf("[Sandbox] Loaded %d rules from %s\n", rule_count, path);
 }
 
@@ -208,6 +213,24 @@ void apply_fix(const char *type, const char *file, int line)
                 dst, src, dst);
             strncpy(l, tmp, sizeof(lines[target]));
             fixed = 1;
+
+            // Ensure string.h is included for strncpy
+            int has_string = 0;
+            for (int i = 0; i < linecount; i++)
+            {
+                if (strstr(lines[i], "string.h"))
+                {
+                    has_string = 1;
+                    break;
+                }
+            }
+            if (!has_string)
+            {
+                for (int i = linecount; i > 0; i--)
+                    strncpy(lines[i], lines[i-1], sizeof(lines[i]));
+                strncpy(lines[0], "#include <string.h> /* auto-added */\n", sizeof(lines[0]));
+                linecount++;
+            }
         }
     }
 
@@ -258,6 +281,24 @@ void apply_fix(const char *type, const char *file, int line)
                 sizestr, sizestr);
             strncpy(l, tmp, sizeof(lines[target]));
             fixed = 1;
+
+            // Ensure stdio.h is included for fprintf
+            int has_stdio = 0;
+            for (int i = 0; i < linecount; i++)
+            {
+                if (strstr(lines[i], "stdio.h"))
+                {
+                    has_stdio = 1;
+                    break;
+                }
+            }
+            if (!has_stdio)
+            {
+                for (int i = linecount; i > 0; i--)
+                    strncpy(lines[i], lines[i-1], sizeof(lines[i]));
+                strncpy(lines[0], "#include <stdio.h> /* auto-added */\n", sizeof(lines[0]));
+                linecount++;
+            }
         }
     }
 
@@ -269,16 +310,97 @@ void apply_fix(const char *type, const char *file, int line)
         {
             char patharg[128] = {0}, modearg[32] = {0};
             sscanf(pos + 6, "%127[^,], %31[^)]", patharg, modearg);
+
+            // preserve assignment prefix if present (e.g., FILE *f = )
+            char prefix[256] = "";
+            char *eq = strchr(l, '=');
+            if (eq && eq < pos)
+            {
+                int plen = eq - l + 1;
+                if (plen > (int)sizeof(prefix) - 1)
+                    plen = sizeof(prefix) - 1;
+                strncpy(prefix, l, plen);
+                prefix[plen] = '\0';
+            }
+
             char tmp[1024];
             snprintf(tmp, sizeof(tmp),
-                "    /* auto-fixed: path sanitized */ "
-                "(strstr(%s, \"../\") || strstr(%s, \"/etc\") || "
-                "strstr(%s, \"/root\") ? "
-                "(fprintf(stderr, \"[Sandbox] Blocked path\\n\"), "
-                "(FILE*)NULL) : fopen(%s, %s));\n",
+                "%s(strstr(%s, \"../\") || strstr(%s, \"/etc\") || strstr(%s, \"/root\") ? "
+                "(fprintf(stderr, \"[Sandbox] Blocked path\\n\"), (FILE*)NULL) : fopen(%s, %s));\n",
+                prefix[0] ? prefix : "    ",
                 patharg, patharg, patharg, patharg, modearg);
             strncpy(l, tmp, sizeof(lines[target]));
             fixed = 1;
+
+            // Ensure string.h is included for strstr
+            int has_string = 0;
+            for (int i = 0; i < linecount; i++)
+            {
+                if (strstr(lines[i], "string.h"))
+                {
+                    has_string = 1;
+                    break;
+                }
+            }
+            if (!has_string)
+            {
+                for (int i = linecount; i > 0; i--)
+                    strncpy(lines[i], lines[i-1], sizeof(lines[i]));
+                strncpy(lines[0], "#include <string.h> /* auto-added */\n", sizeof(lines[0]));
+                linecount++;
+            }
+        }
+    }
+
+    // fix: file write restriction
+    if (!strcmp(type, "FILE_WRITE"))
+    {
+        bool has_write = strstr(l, "fwrite(") || strstr(l, "fputs(");
+        if (has_write)
+        {
+            // For simplicity, replace with a blocked message
+            char tmp[1024];
+            snprintf(tmp, sizeof(tmp),
+                "    /* auto-fixed: write restricted */ "
+                "fprintf(stderr, \"[Sandbox] Write operation blocked\\n\");\n");
+            strncpy(l, tmp, sizeof(lines[target]));
+            fixed = 1;
+
+            // Ensure stdio.h is included for fprintf
+            int has_stdio = 0;
+            for (int i = 0; i < linecount; i++)
+            {
+                if (strstr(lines[i], "stdio.h"))
+                {
+                    has_stdio = 1;
+                    break;
+                }
+            }
+            if (!has_stdio)
+            {
+                for (int i = linecount; i > 0; i--)
+                    strncpy(lines[i], lines[i-1], sizeof(lines[i]));
+                strncpy(lines[0], "#include <stdio.h> /* auto-added */\n", sizeof(lines[0]));
+                linecount++;
+            }
+
+            // Ensure string.h is included (as per user request)
+            int has_string = 0;
+            for (int i = 0; i < linecount; i++)
+            {
+                if (strstr(lines[i], "string.h"))
+                {
+                    has_string = 1;
+                    break;
+                }
+            }
+            if (!has_string)
+            {
+                for (int i = linecount; i > 0; i--)
+                    strncpy(lines[i], lines[i-1], sizeof(lines[i]));
+                strncpy(lines[0], "#include <string.h> /* auto-added */\n", sizeof(lines[0]));
+                linecount++;
+            }
         }
     }
 
@@ -303,8 +425,11 @@ void apply_fix(const char *type, const char *file, int line)
 
 void evaluate_policies()
 {
+    if (policies_evaluated) return;
+
     printf("[Sandbox] Total violations: %d | Highest: %s\n",
            violation_count, highest);
+    policies_evaluated = 1;
 }
 
 int         get_violation_count()     { return violation_count; }

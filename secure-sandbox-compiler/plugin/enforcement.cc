@@ -4,8 +4,13 @@
 #include "policy_engine.h"
 #include "enforcement.h"
 
+static int policies_enforced = 0;
+
 void enforce_policies()
 {
+    if (policies_enforced) return;
+    policies_enforced = 1;
+
     if (get_violation_count() == 0)
     {
         printf("[Sandbox] No violations found. Clean.\n");
