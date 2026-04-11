@@ -1,6 +1,3 @@
-Readme · MD
-Copy
-
 # Secure Sandbox Compiler
  
 A GCC plugin that enforces configurable security policies at **compile time** by analyzing code using GIMPLE IR, detecting violations, auto-fixing dangerous patterns, and blocking unsafe binaries from being generated.
